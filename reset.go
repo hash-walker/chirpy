@@ -1,14 +1,24 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
+	"log"
 )
 
 
 func (apiCfg *apiConfig) handlerReset(w http.ResponseWriter, r *http.Request){
-		apiCfg.fileserverHits.Store(0)
-		w.WriteHeader(http.StatusOK)	
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte(fmt.Sprintf("Hits: %v", apiCfg.fileserverHits.Load())))
+
+	if (apiCfg.Platform != "dev"){
+		w.WriteHeader(http.StatusForbidden)	
+		return
+	}
+
+	err := apiCfg.DB.DeleteUsers(r.Context())
+
+	if err != nil {
+		log.Printf("Error deleting users: %v", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Error deleting users"})
+		return
+	}
+		
 }
