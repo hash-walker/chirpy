@@ -48,7 +48,7 @@ func (apiCfg *apiConfig) users(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	writeJSON(w, http.StatusOK, databaseUserToUser(usr))
+	writeJSON(w, http.StatusOK, databaseUserToUser(usr, nil))
 }
 
 func (apiCfg *apiConfig) handlerUserLogin(w http.ResponseWriter, r *http.Request){
@@ -105,25 +105,116 @@ func (apiCfg *apiConfig) handlerUserLogin(w http.ResponseWriter, r *http.Request
 		RevokedAt: sql.NullTime{Valid: false},
 	})
 
-
-	type AuthResponse struct {
-    ID        uuid.UUID `json:"id"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-    Email     string    `json:"email"`
-    Token     string    `json:"token"`
-	RefreshToken string `json:"refreshToken"`
-	}
-
-	response := AuthResponse{
-		ID: usr.ID,
-		CreatedAt: usr.CreatedAt,
-		UpdatedAt: usr.UpdatedAt,
-		Email: usr.Email,
+	payload := AuthPayload{
 		Token: token,
 		RefreshToken: refreshToken,
 	}
+	
 
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, databaseUserToUser(usr, payload))
+
+}
+
+func (apiCfg *apiConfig) handlerUserUpdate(w http.ResponseWriter, r *http.Request){
+
+	token, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, err)
+		return 
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.SecretToken)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, err)
+		return 
+	}
+	
+	type parameter struct {
+		Password string `json:"password"`
+		Email string `json:"email"`
+	}
+
+	var params parameter
+
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		log.Printf("Error decoding JSON: %v", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Something went wrong"})
+		return
+	}
+
+	hashed_password, err := auth.HashPassword(params.Password)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Error generating hashed password"})
+		return
+	}
+
+	err = apiCfg.DB.UpdateUser(r.Context(), database.UpdateUserParams{
+		Email: params.Email,
+		HashedPassword: hashed_password,
+		ID: userID,
+	})
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Error updating user details"})
+		return
+	}
+
+	usr, err := apiCfg.DB.GetUserByEmail(r.Context(), params.Email)
+
+	if err != nil {
+		log.Printf("Error getting user by email: %v", err)
+		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "Incorrect email or password"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, databaseUserToUser(usr, nil))
+
+}
+
+func (apiCfg *apiConfig) handlerUserUpgrade(w http.ResponseWriter, r *http.Request){
+
+	apiKey, err := auth.GetApiKey(r.Header)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, err)
+	}
+
+	if apiKey != apiCfg.PolkaKey{
+		w.WriteHeader(http.StatusUnauthorized)
+		return 
+	}
+
+
+	type parameter struct{
+		Event string `json:"event"`
+		Data struct {
+			UserID uuid.UUID `json:"user_id"`
+		} `json:"data"`
+	}
+
+	var params parameter
+
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		log.Printf("Error decoding JSON: %v", err)
+		writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Something went wrong"})
+		return
+	}
+
+	if params.Event != "user.upgraded"{
+		w.WriteHeader(http.StatusNoContent)
+		return 
+	}
+
+	err = apiCfg.DB.UpgradeUsers(r.Context(), params.Data.UserID)
+
+	if err != nil{
+		writeJSON(w, http.StatusNotFound, err)
+		return 
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 
 }

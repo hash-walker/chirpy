@@ -17,6 +17,7 @@ type apiConfig struct {
 	DB *database.Queries
 	Platform string
 	SecretToken string
+	PolkaKey string
 }
 
 
@@ -50,6 +51,7 @@ func main(){
 		DB: db,
 		Platform: os.Getenv("PLATFORM"),
 		SecretToken: secretToken,
+		PolkaKey: os.Getenv("POLKA_KEY"),
 	}
 
 
@@ -72,6 +74,10 @@ func main(){
 	serveMux.HandleFunc("GET /api/chirps/{chirpyID}", apiCfg.getChirp)
 	serveMux.HandleFunc("POST /api/login", apiCfg.handlerUserLogin)
 	serveMux.HandleFunc("POST /api/refresh", apiCfg.handlerRefresh)
+	serveMux.HandleFunc("POST /api/revoke", apiCfg.handlerRevoke)
+	serveMux.HandleFunc("PUT /api/users", apiCfg.handlerUserUpdate)
+	serveMux.HandleFunc("DELETE /api/chirps/{chirpyID}", apiCfg.deleteChirp)
+	serveMux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerUserUpgrade)
 
 
 	server := &http.Server{

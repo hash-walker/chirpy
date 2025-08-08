@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -15,7 +17,6 @@ import (
 
 type parameter struct{
 	Body string `json:"body"`
-	UserID uuid.UUID `json:"user_id"`
 }
 
 type errorResponse struct {
@@ -79,12 +80,6 @@ func (apiCfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	if userID != params.UserID{
-		log.Printf("Cannot authenticate the user")
-		writeJSON(w, http.StatusUnauthorized, errorResponse{Error: "Cannot authenticate the user"})
-		return
-	}
-
 	
 	bodyLength := len(params.Body)
 
@@ -111,8 +106,131 @@ func (apiCfg *apiConfig) handlerChirps(w http.ResponseWriter, r *http.Request){
 
 		writeJSON(w, http.StatusOK, databaseChirpToChirp(chirp))
 
+	}	
+
+}
+
+func (apiCfg *apiConfig) getAllChirps(w http.ResponseWriter, r *http.Request){
+
+	s := r.URL.Query().Get("author_id")
+	order := r.URL.Query().Get("sort")
+	
+
+	if s != ""{
+		author_id, err := uuid.Parse(s)
+
+		if err != nil {
+			writeJSON(w, 400, fmt.Sprintf("Couldn't parse the chirp id: %v", err))
+			return 
+		}
+
+		chirps, err := apiCfg.DB.GetChirpByAuthor(r.Context(), author_id)
+
+		if err != nil {
+			log.Printf("Error getting chirps: %v", err)
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Error getting chirps"})
+			return
+		}
+
+		if order != "" && order == "desc" {
+			sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+			})
+		} else if order == "asc" {
+			sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+			})
+		}
+
+		writeJSON(w, http.StatusOK, chirps)
+
+
+	}else{
+
+		chirps, err := apiCfg.DB.GetAllChirps(r.Context())
+
+		if err != nil {
+			log.Printf("Error getting chirps: %v", err)
+			writeJSON(w, http.StatusInternalServerError, errorResponse{Error: "Error getting chirps"})
+			return
+		}
+
+		if order != "" && order == "desc" {
+			sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].CreatedAt.After(chirps[j].CreatedAt)
+			})
+		} else if order == "asc" {
+			sort.Slice(chirps, func(i, j int) bool {
+				return chirps[i].CreatedAt.Before(chirps[j].CreatedAt)
+			})
+		}
+
+		writeJSON(w, http.StatusOK, chirps)
+	}
+}
+
+func (apiCfg *apiConfig) getChirp(w http.ResponseWriter, r *http.Request){
+	chirpID, err := uuid.Parse(r.PathValue("chirpyID"))
+
+	if err != nil {
+		writeJSON(w, 400, fmt.Sprintf("Couldn't parse the chirp id: %v", err))
+		return 
 	}
 
+
+	chirps, err := apiCfg.DB.GetChirp(r.Context(), chirpID)
+
+	if err != nil {
+		writeJSON(w, 400, fmt.Sprintf("Couldn't get the chirp with id: %v", chirpID))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, chirps)
 	
+}
+
+
+func (apiCfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request){
+	chirpID, err := uuid.Parse(r.PathValue("chirpyID"))
+
+	if err != nil {
+		writeJSON(w, 400, fmt.Sprintf("Couldn't parse the chirp id: %v", err))
+		return 
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, err)
+		return 
+	}
+
+	userID, err := auth.ValidateJWT(token, apiCfg.SecretToken)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, err)
+		return 
+	}
+
+	chirp, err := apiCfg.DB.GetChirp(r.Context(), chirpID)
+
+	if err != nil {
+		writeJSON(w, 404, fmt.Sprintf("Can't find the chirp with id: %v", chirpID))
+		return
+	}
+
+	if chirp.UserID != userID{
+		writeJSON(w, http.StatusUnauthorized, "Unauthorized user")
+		return
+	}
+
+	err = apiCfg.DB.DeleteChirp(r.Context(), chirpID)
+
+	if chirp.UserID != userID{
+		writeJSON(w, http.StatusUnauthorized, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 
 }

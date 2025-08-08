@@ -40,3 +40,29 @@ func (apiCfg *apiConfig) handlerRefresh(w http.ResponseWriter, r *http.Request){
 	writeJSON(w, http.StatusOK, response)
 
 }
+
+func (apiCfg *apiConfig) handlerRevoke(w http.ResponseWriter, r *http.Request){
+	token, err := auth.GetBearerToken(r.Header)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, err)
+		return 
+	}
+
+	refreshToken, err := apiCfg.DB.CheckToken(r.Context(), token)
+
+	if err != nil {
+		writeJSON(w, http.StatusUnauthorized, err)
+		return 
+	}
+
+	err = apiCfg.DB.RevokeToken(r.Context(), refreshToken.Token)
+
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, "Cannot update the refresh token")
+		return 
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+
+}

@@ -100,3 +100,16 @@ func MakeRefreshToken() (string, error){
 
 	return refreshToken, nil
 }
+
+func GetApiKey(headers http.Header) (string, error){
+	authorization := headers.Get("Authorization")
+
+	if authorization == ""{
+		return "", fmt.Errorf("error getting the authorization header")
+	}
+
+
+	authorizationSplit := strings.Split(authorization, " ")
+
+	return authorizationSplit[1], nil 
+}

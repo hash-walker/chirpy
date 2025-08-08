@@ -9,3 +9,6 @@ RETURNING *;
 SELECT revoke_token.* from revoke_token
 WHERE revoke_token.token = $1;
 
+-- name: RevokeToken :exec
+UPDATE revoke_token SET revoked_at = NOW(), updated_at = NOW() WHERE token = $1;
+
